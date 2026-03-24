@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -63,6 +65,18 @@ public class ExpectTest {
    * A task that the main thread will await, to be provided by tests that do work in other threads.
    */
   private Future<?> taskToAwait = immediateFuture(null);
+
+  private static ExecutorService sharedExecutor;
+
+  @BeforeClass
+  public static void setUpExecutor() {
+    sharedExecutor = newSingleThreadExecutor();
+  }
+  
+  @AfterClass
+  public static void tearDownExecutor() {
+    sharedExecutor.shutdown();
+  }
 
   @Rule
   public final TestRule wrapper =
@@ -195,19 +209,16 @@ public class ExpectTest {
 
   @Test
   public void failWhenCallingThatAfterTest() {
-    ExecutorService executor = newSingleThreadExecutor();
     taskToAwait =
-        executor.submit(
+        sharedExecutor.submit(
             () -> {
               awaitUninterruptibly(testMethodComplete);
               assertThrows(IllegalStateException.class, () -> expect.that(3));
             });
-    executor.shutdown();
   }
 
   @Test
   public void failWhenCallingFailingAssertionMethodAfterTest() {
-    ExecutorService executor = newSingleThreadExecutor();
     /*
      * We wouldn't expect people to do this exactly. The point is that, if someone were to call
      * expect.that(3).isEqualTo(4), we would always either fail the test or throw an
@@ -215,13 +226,12 @@ public class ExpectTest {
      */
     IntegerSubject expectThat3 = expect.that(3);
     taskToAwait =
-        executor.submit(
+        sharedExecutor.submit(
             () -> {
               awaitUninterruptibly(testMethodComplete);
               IllegalStateException expected =
                   assertThrows(IllegalStateException.class, () -> expectThat3.isEqualTo(4));
               assertThat(expected).hasCauseThat().isInstanceOf(AssertionError.class);
             });
-    executor.shutdown();
   }
 }
